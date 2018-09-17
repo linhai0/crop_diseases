@@ -125,3 +125,12 @@ distorted_image = tf.random_crop(image, size=[128, 64, num_channels])
     distorted_image = tf.image.random_flip_up_down(distorted_image)
     distorted_image = distort_color(distorted_image, np.random.randint(4))
     distorted_image-tf.image.rot90(distorted_image,np.random.randint(4))
+
+
+    fs ismf
+fsgs
+fs
+getattr(sfs
+        )fs
+
+fsfs
