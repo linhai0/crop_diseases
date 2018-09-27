@@ -1,9 +1,10 @@
 import cv2
 import numpy as np
 import tensorflow as tf
+import math
 
 
-def random_transform(image, rotation_range, zoom_range, shift_range, random_flip):
+def random_transform(image, rotation_range, zoom_range, shift_range, random_flip, *args, **kwargs):
     h, w = image.shape[0:2]
     rotation = np.random.uniform(-rotation_range, rotation_range)
     scale = np.random.uniform(1 - zoom_range, 1 + zoom_range)
@@ -60,7 +61,7 @@ def to_rgb(img):
 
 
 class TfAugmentation(object):
-    def __int__(self, image_queue, image_size, transform_args=None, num_channels=3, interpolation=0, bbox=None, *args,
+    def __init__(self, batch_size, image_size, transform_args=None, num_channels=3, interpolation=0, bbox=None, *args,
                 **kwargs):
 
         """
@@ -70,16 +71,17 @@ class TfAugmentation(object):
         :param interpolation: 0,默认 双线性插值；1，最近邻算法； 2， 双3次插值法；3，面积插值法
         :return:
         """
-        self.image_queue = image_queue
+        self.batch_size = batch_size
         self.image_size = image_size
         self.trans_args = transform_args
         self.num_channels = num_channels
         self.interpolation = interpolation
+        self.bbox = bbox
         self.args_list = args
         self.kwargs_dict = kwargs
-        self.bbox = bbox
 
     def distort_color(self, image, color_ordering=0):
+        # single image not images
         if color_ordering == 0:
             image = tf.image.random_brightness(image, max_delta=32. / 255.)  # 亮度
             image = tf.image.random_saturation(image, lower=0.5, upper=1.5)  # 饱和度
@@ -104,33 +106,127 @@ class TfAugmentation(object):
         return tf.clip_by_value(image, .0, 1.)
 
     def use_bbox(self, image):
+        # single images
         bbox_begain, bbox_size = tf.image.sample_distorted_bounding_box(tf.shape(image), bounding_boxes=self.bbox)
         # tf.shape(image)进行queue的时候很容出错，慎用
         image = tf.slice(image, bbox_begain, bbox_size)
         return image
 
-    def transform_image(self):
-        image = tf.image.resize_images(self.image_queue, self.image_size, method=self.interpolation)
+    def augment(self, images, labels):
+        return self._inter_augment(images, labels, self.batch_size, self.image_size, **self.trans_args)
 
+    # GPU Aumentation
+    def _inter_augment(self, images, labels, batch_size, image_size,
+                       horizontal_flip=True,
+                       vertical_flip=True,
+                       rotation_range=8,  # Maximum rotation angle in degrees
+                       crop_probability=0.8,  # How often we do crops
+                       crop_min_percent=0.6,  # Minimum linear dimension of a crop
+                       crop_max_percent=1.,  # Maximum linear dimension of a crop
+                       mixup=0):  # Mixup coeffecient, see https://arxiv.org/abs/1710.09412.pdf
 
+        # My experiments showed that casting on GPU improves training performance
+        labels = tf.to_float(labels)
 
-distorted_image = tf.image.resize_images(distorted_image, height, width, method=np.random.randint(4))
-    distorted_image = tf.image.random_flip_left_right(distorted_image)
-    distorted_image = distort_color(distorted_image, np.random.randint(4))
+        with tf.name_scope('augmentation'):
+            width = tf.cast(image_size[1], tf.float32)
+            height = tf.cast(image_size[0], tf.float32)
 
+            # The list of affine transformations that our image will go under.
+            # Every element is Nx8 tensor, where N is a batch size.
+            transforms = []
+            identity = tf.constant([1, 0, 0, 0, 1, 0, 0, 0], dtype=tf.float32)
+            if horizontal_flip:
+                coin = tf.less(tf.random_uniform([batch_size], 0, 1.0), 0.5)
+                flip_transform = tf.convert_to_tensor(
+                    [-1., 0., width, 0., 1., 0., 0., 0.], dtype=tf.float32)
+                transforms.append(
+                    tf.where(coin,
+                             tf.tile(tf.expand_dims(flip_transform, 0), [batch_size, 1]),
+                             tf.tile(tf.expand_dims(identity, 0), [batch_size, 1])))
 
-distorted_image = tf.random_crop(image, size=[128, 64, num_channels])
-    # distorted_image = tf.image.resize_images(image, (height, width), method=np.random.randint(4))
-    distorted_image = tf.image.random_flip_left_right(distorted_image)
-    distorted_image = tf.image.random_flip_up_down(distorted_image)
-    distorted_image = distort_color(distorted_image, np.random.randint(4))
-    distorted_image-tf.image.rot90(distorted_image,np.random.randint(4))
+            if vertical_flip:
+                coin = tf.less(tf.random_uniform([batch_size], 0, 1.0), 0.5)
+                flip_transform = tf.convert_to_tensor(
+                    [1, 0, 0, 0, -1, height, 0, 0], dtype=tf.float32)
+                transforms.append(
+                    tf.where(coin,
+                             tf.tile(tf.expand_dims(flip_transform, 0), [batch_size, 1]),
+                             tf.tile(tf.expand_dims(identity, 0), [batch_size, 1])))
 
+            if rotation_range > 0:
+                angle_rad = rotation_range / 180 * math.pi
+                angles = tf.random_uniform([batch_size], -angle_rad, angle_rad)
+                transforms.append(
+                    tf.contrib.image.angles_to_projective_transforms(
+                        angles, height, width))
 
-    fs ismf
-fsgs
-fs
-getattr(sfs
-        )fs
+            if crop_probability > 0:
+                crop_pct = tf.random_uniform([batch_size], crop_min_percent,
+                                             crop_max_percent)
+                left = tf.random_uniform([batch_size], 0, width * (1 - crop_pct))
+                top = tf.random_uniform([batch_size], 0, height * (1 - crop_pct))
+                crop_transform = tf.stack([
+                    crop_pct,
+                    tf.zeros([batch_size]), top,
+                    tf.zeros([batch_size]), crop_pct, left,
+                    tf.zeros([batch_size]),
+                    tf.zeros([batch_size])
+                ], 1)
 
-fsfs
+                coin = tf.less(
+                    tf.random_uniform([batch_size], 0, 1.0), crop_probability)
+                transforms.append(
+                    tf.where(coin, crop_transform,
+                             tf.tile(tf.expand_dims(identity, 0), [batch_size, 1])))
+
+            if transforms:
+                images = tf.contrib.image.transform(
+                    images,
+                    tf.contrib.image.compose_transforms(*transforms),
+                    interpolation='BILINEAR')  # or 'NEAREST'
+
+            def cshift(values):  # Circular shift in batch dimension
+                return tf.concat([values[-1:, ...], values[:-1, ...]], 0)
+
+            if mixup > 0:
+                mixup = 1.0 * mixup  # Convert to float, as tf.distributions.Beta requires floats.
+                beta = tf.distributions.Beta(mixup, mixup)
+                lam = beta.sample(batch_size)
+                ll = tf.expand_dims(tf.expand_dims(tf.expand_dims(lam, -1), -1), -1)
+                images = ll * images + (1 - ll) * cshift(images)
+                labels = lam * labels + (1 - lam) * cshift(labels)
+
+        return images, labels
+
+    def mix_not_use(self, image, distorted_image, height, width):
+        distorted_image = tf.image.resize_images(distorted_image, height, width, method=np.random.randint(4))
+        distorted_image = tf.image.random_flip_left_right(distorted_image)
+        distorted_image = self.distort_color(distorted_image, np.random.randint(4))
+
+        distorted_image = tf.random_crop(image, size=[128, 64, self.num_channels])
+        # distorted_image = tf.image.resize_images(image, (height, width), method=np.random.randint(4))
+        distorted_image = tf.image.random_flip_left_right(distorted_image)
+        distorted_image = tf.image.random_flip_up_down(distorted_image)
+        distorted_image = self.distort_color(distorted_image, np.random.randint(4))
+        distorted_image - tf.image.rot90(distorted_image, np.random.randint(4))
+
+        # 随机裁剪，随机左右翻转，颜色失真
+
+        def transform_image(self):
+            image = tf.image.resize_images(self.image_queue, self.image_size, method=self.interpolation)
+            # resize_images must use befor tf.train.batch()
+
+            # 单张图片
+            tf.random_crop()
+
+            tf.image.per_image_standardization()
+
+            # batch图片
+            # image = tf.image.rot90(image, np.random.randint(0, 4))
+            image = tf.image.random_flip_left_right(image)
+            image = tf.image.random_flip_up_down(image)
+
+        def central_scale_images(self, image, scales):
+            pass  # boxes
+

@@ -1,7 +1,6 @@
 import tensorflow as tf
 import re
-import keras
-from keras.layers import BatchNormalization
+import functools
 
 TOWER_NAME = 'tower'
 
@@ -15,7 +14,7 @@ class model_build_tools(object):
         :return: None
         """
         # tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
-        tf.summary.histogram(x.op.name + '/activations', x)
+        # tf.summary.histogram(x.op.name + '/activations', x)
         tf.summary.scalar(x.op.name + '/sparsity', tf.nn.zero_fraction(x))
 
     def _variable_on_cpu(self, name, shape, initializer):
@@ -85,7 +84,7 @@ class model_build_tools(object):
 class ModelTrainTools(object):
 
     @classmethod
-    def loss(cls, logits, labels):
+    def classify_loss(cls, logits, labels):
         """Add L2Loss to all the trainable variables.
         Add summary for "Loss" and "Loss/avg".
         Args:
@@ -107,17 +106,26 @@ class ModelTrainTools(object):
         return tf.add_n(tf.get_collection('losses'), name='total_loss')
 
     @classmethod
-    def acc(cls, net_out, labels):
+    def classify_accuracy(cls, net_out, labels):
         """
         :param net_out:
         :param labels:
         :return: num of predict crrect, num of predict wrong
         """
-        # pre = tf.argmax(net_out, axis=0)
+        # pre = tf.argmax(net_out, axis=1)
         # assert pre.get_shape().as_list() == labels.get_shape().as_list()
         # bool_value = tf.equal(pre, labels)
         # return tf.count_nonzero(bool_value), tf.subtract(labels.get_shape().as_list().count_nonzero(bool_value))
-        return tf.nn.in_top_k(net_out, labels, 1)
+        # return tf.nn.in_top_k(net_out, labels, 1)
+
+        with tf.name_scope('accuracy'): #先使用namescopy看graph 再尝试使用variablescope
+            with tf.name_scope('correct_prediction'):
+                correct_prediction = tf.equal(tf.argmax(net_out, 1), labels)
+            with tf.name_scope('accuracy'):
+                accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+            tf.summary.scalar('accuracy', accuracy)
+            return accuracy
+
 
     @classmethod
     def train(cls, total_loss, global_step, moving_average_decay, image_nums, batch_size, epochs, learning_rate=1e-3,
@@ -177,3 +185,87 @@ class ModelTrainTools(object):
         with tf.control_dependencies([apply_gradient_op, variables_averages_op]):
             train_op = tf.no_op(name='train')
         return train_op
+
+
+def use_queue_wrap(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if 'use_queue' not in kwargs:
+            raise ValueError('Please use special kwargs not args! use_queue=True NOT True')
+        if not kwargs['use_queue']:
+            x = func(*args, **kwargs)
+        elif kwargs['use_queue']:
+            print('Use queue input...')
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(coord=coord)
+            x = func(*args, **kwargs)
+
+            coord.request_stop()
+            coord.join(threads)
+
+        print('\nEND')
+        return x
+
+    return wrapper
+
+
+@use_queue_wrap
+def train_batch_and_save(FLAGS, train_list=None, feed_dict=None, is_loadmodel=True):
+    # train_list = [train_op, total_loss, accuracy]
+    # nx_train, ny_train = None, None
+
+    steps = FLAGS.images // FLAGS.batch_size
+
+    sess = tf.Session()
+    saver = tf.train.Saver(tf.global_variables())
+    summary_op = tf.summary.merge_all()
+    summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph_def)
+
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.local_variables_initializer())
+    # split
+    checkpoint_dir = tf.train.get_checkpoint_state(FLAGS.output_dir)
+    if checkpoint_dir and checkpoint_dir.model_checkpoint_path and is_loadmodel==True:
+        saver.restore(sess, checkpoint_dir.model_checkpoint_path)
+    else:
+        print('Not found checkpoint file or is_loadmodel=False')
+
+    if FLAGS.use_queue == True:
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(coord=coord)
+
+    # for epoch in range(FLAGS.epochs):
+    #     for step in range(steps):
+    #
+    #         if step and step % FLAGS.log_interval == 0:
+    #             解决方法：bx,by, = sess.run([batch_x, batch_y])
+    #                         sess.run([], feed_dict={:bx,:by})
+    #             _, loss_value, acc_value, summary_str = sess.run(train_list + [summary_op], feed_dict=feed_dict)
+    #             logger.info('[{0} / {1}] batch {2}, loss {3}'.format(
+    #                 step // log_interval,
+    #                 steps // log_interval,
+    #                 step, loss_value)
+    #             summary_writer.add_summary(summary_str, step)
+    #             pass
+    #
+    # if use_queue == True:
+    #     coord.request_stop()
+    #     coord.join(threads)
+
+def sess_and_saver_initial(output_dir, is_loadmodel):
+    sess = tf.Session()
+    saver = tf.train.Saver(tf.global_variables())
+    summary_op = tf.summary.merge_all()
+    summary_writer = tf.summary.FileWriter(output_dir, sess.graph_def)
+
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.local_variables_initializer())
+    # split
+    checkpoint_dir = tf.train.get_checkpoint_state(output_dir)
+    if checkpoint_dir and checkpoint_dir.model_checkpoint_path and is_loadmodel == True:
+        saver.restore(sess, checkpoint_dir.model_checkpoint_path)
+    else:
+        print('Not found checkpoint file or is_loadmodel=False')
+    return sess, summary_op, summary_writer, saver
+
+# def train_epochs_and_steps_with_multi_reader()
