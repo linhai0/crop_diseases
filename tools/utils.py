@@ -23,7 +23,7 @@ def get_logger(logger_name, logger_dir):
     logger = logging.getLogger(logger_name)
     logger.propagate = False
     logger.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %A %H:%M:%S')
+    formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     file_handler = logging.FileHandler(logger_filepath)
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)

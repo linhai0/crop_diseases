@@ -5,27 +5,27 @@ from config import FLAGS
 # `make_models` is a helper function to load any models you have
 from models import make_models
 # from hpsearch import hyperband, randomsearch
-from models.model_train import train
+from models.model_train import train, multi_train
 from models.simple_net import sim_net
 
 
-def main(_):
+def run(_):
     # config = FLAGS.FLAGS.__flags.copy()
     # fixed_params must be a string to be passed in the shell, let's use JSON
     # config["fixed_params"] = json.loads(config["fixed_params"])
 
-    if FLAGS.FLAGS.fullsearch:
+    if FLAGS.fullsearch:
         # Some code for HP search ...
         pass
     else:
-        model = make_models(FLAGS.FLAGS)
+        model = make_models(FLAGS)
 
-        if FLAGS.FLAGS.infer:
+        if FLAGS.infer:
             # Some code for inference ...
             pass
         else:
-            train(model, FLAGS.FLAGS)
+            multi_train(model, FLAGS)
 
 
 if __name__ == '__main__':
-    tf.app.run()
+    tf.app.run(run)

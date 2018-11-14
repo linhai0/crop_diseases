@@ -5,7 +5,7 @@ import functools
 TOWER_NAME = 'tower'
 
 
-class model_build_tools(object):
+class ModelBuildTools(object):
 
     def _activation_summary(self, x):
         """
@@ -43,7 +43,7 @@ class model_build_tools(object):
         var = self._variable_on_cpu(name, shape, tf.random_normal_initializer(stddev=stddev))
         if wd:
             weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
-            tf.add_to_collection('regu_losses', weight_decay)
+            tf.add_to_collection('losses', weight_decay)
 
         return var
 
@@ -72,7 +72,7 @@ class model_build_tools(object):
         loss_averages_op = loss_averages.apply(losses + [total_loss])
 
         for l in losses + [total_loss]:
-            tf.summary.scalar(l.op.name + ' (raw)', l)
+            tf.summary.scalar(l.op.name + '_raw', l)
             tf.summary.scalar(l.op.name, loss_averages.average(l))
 
         return loss_averages_op
@@ -128,24 +128,22 @@ class ModelTrainTools(object):
 
 
     @classmethod
-    def train(cls, total_loss, global_step, moving_average_decay, image_nums, batch_size, epochs, learning_rate=1e-3,
-              decay_rate=0.9, log_histograms=True):
-        ###改成传入更少的参数
+    def train(cls, total_loss, global_step,  image_nums, FLAGS):
         """
         :param total_loss:
-        :param gloabl_step:
+        :param global_step:
         :param image_nums:
-        :param batch_size:
-        :param epochs:
-        :param learning_rate:
-        :param decay_rate:
+        :param FLAGS: with batchsize, epochs, lr, decay_rate, moveing_average_rate, log_histogram
         :return:
         """
-        decay_step = int(image_nums // batch_size * epochs)
-        lr = tf.train.exponential_decay(learning_rate,
+        # batch_size, epochs, learning_rate=1e-3,
+        #       decay_rate=0.9, log_histograms=True):
+
+        decay_step = int(image_nums // FLAGS.batch_size * FLAGS.num_epochs)
+        lr = tf.train.exponential_decay(FLAGS.learning_rate,
                                         global_step,
                                         decay_step,
-                                        decay_rate=decay_rate,
+                                        decay_rate=FLAGS.decay_rate,
                                         staircase=True)
         tf.summary.scalar('learning_rate', lr)
         opt = tf.train.AdamOptimizer(lr)
@@ -155,11 +153,11 @@ class ModelTrainTools(object):
         loss_averages_op = loss_averages.apply(losses + [total_loss])
 
         for l in losses + [total_loss]:
-            tf.summary.scalar(l.op.name + ' (raw)', l)
+            tf.summary.scalar(l.op.name + '_raw', l)
             tf.summary.scalar(l.op.name, loss_averages.average(l))
 
-        # loss_averages_op = self.utils._add_loss_summaries(total_loss)
 
+        # tf.gradients()
         with tf.control_dependencies([loss_averages_op]):
             grads = opt.compute_gradients(total_loss)
 
@@ -170,14 +168,14 @@ class ModelTrainTools(object):
         #     for var in tf.trainable_variables():
         #         tf.summary.histogram(var.op.name, var)
         variable_averages = tf.train.ExponentialMovingAverage(
-            moving_average_decay, global_step)
+            FLAGS.moving_average_decay, global_step)
         variables_averages_op = variable_averages.apply(tf.trainable_variables())
-        if log_histograms:
+        if FLAGS.log_histograms:
             for var in tf.trainable_variables():
                 tf.summary.histogram(var.op.name, var)
 
             # Add histograms for gradients.
-        if log_histograms:
+        if FLAGS.log_histograms:
             for grad, var in grads:
                 if grad is not None:
                     tf.summary.histogram(var.op.name + '/gradients', grad)
@@ -256,7 +254,7 @@ def sess_and_saver_initial(output_dir, is_loadmodel):
     sess = tf.Session()
     saver = tf.train.Saver(tf.global_variables())
     summary_op = tf.summary.merge_all()
-    summary_writer = tf.summary.FileWriter(output_dir, sess.graph_def)
+    summary_writer = tf.summary.FileWriter(output_dir, sess.graph)
 
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())

@@ -3,6 +3,8 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/crop_diseases.iml" filepath="$PROJECT_DIR$/.idea/crop_diseases.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../faceswap/.idea/faceswap.iml" filepath="$PROJECT_DIR$/../faceswap/.idea/faceswap.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../gan_captcha/.idea/gan_captcha.iml" filepath="$PROJECT_DIR$/../gan_captcha/.idea/gan_captcha.iml" />
     </modules>
   </component>
 </project>

@@ -1,25 +1,25 @@
 import tensorflow as tf
 import re
-from models.model_helper import model_build_tools
+from models.model_helper import ModelBuildTools
 
 
 class sim_net(object):
 
     def __init__(self, config):
-        self.utils = model_build_tools()
-        self.num_class = config.num_class
-        self.batch_size = config.batch_size
+        self.mtools = ModelBuildTools()
+        self.num_classes = config.num_classes
+        # self.batch_size = config.batch_size
 
     def inference(self, images):
         with tf.variable_scope('conv1') as scope:
-            kernel = self.utils._variable_with_weight_decay('weights', shape=[3, 3, 3, 64],
+            kernel = self.mtools._variable_with_weight_decay('weights', shape=[3, 3, 3, 64],
                                                             stddev=0.01, wd=5e-4)
-            bias = self.utils._variable_on_cpu('bias', [64], tf.constant_initializer(0))
+            bias = self.mtools._variable_on_cpu('bias', [64], tf.constant_initializer(0))
             conv1 = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
             x = tf.nn.bias_add(conv1, bias)
             x = tf.nn.relu(x)
             x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool')
-            self.utils._activation_summary(x)
+            self.mtools._activation_summary(x)
 
         with tf.variable_scope('conv2') as scope:
             x = tf.contrib.layers.conv2d(x, 128, kernel_size=(3, 3), stride=1, padding='SAME',
@@ -29,8 +29,8 @@ class sim_net(object):
             x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool')
 
         with tf.variable_scope('conv3') as scope:
-            x = self.utils._conv(scope, x, 128, 256, [3, 3])
-            x = self.utils._batchnorm(scope, x)
+            x = self.mtools._conv(scope, x, 128, 256, [3, 3])
+            x = self.mtools._batchnorm(scope, x)
 
             x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool')
 
@@ -49,22 +49,22 @@ class sim_net(object):
                 dim *= d
 
             reshape = tf.reshape(x, [-1, dim])
-            weights = self.utils._variable_with_weight_decay('weights', shape=[dim, 1024],
+            weights = self.mtools._variable_with_weight_decay('weights', shape=[dim, 1024],
                                                              stddev=0.04, wd=0.004)
             print(weights.get_shape())
-            biases = self.utils._variable_on_cpu('biases', [1024], tf.constant_initializer(0.1))
+            biases = self.mtools._variable_on_cpu('biases', [1024], tf.constant_initializer(0.1))
             x = tf.nn.relu(tf.matmul(reshape, weights) + biases, name=scope.name)
             # x = tf.layers.dense(x,1024, activation='relu')
-            self.utils._activation_summary(x)
+            self.mtools._activation_summary(x)
             print(x.get_shape())
 
         with tf.variable_scope('softmax_linear') as scope:
-            weights = self.utils._variable_with_weight_decay('weights', [1024, self.num_class],
+            weights = self.mtools._variable_with_weight_decay('weights', [1024, self.num_classes],
                                                              stddev=1 / 128.0, wd=None)
-            biases = self.utils._variable_on_cpu('biases', [self.num_class],
+            biases = self.mtools._variable_on_cpu('biases', [self.num_classes],
                                                  tf.constant_initializer(0.0))
             softmax_linear = tf.add(tf.matmul(x, weights), biases, name=scope.name)
-            self.utils._activation_summary(softmax_linear)
+            self.mtools._activation_summary(softmax_linear)
 
             return softmax_linear
 

@@ -66,7 +66,7 @@ def gen_train_data(FLAGS):
         train_list, validate_list = _imbalance_dataset_split(train_list, validate_list)
 
     print('Train data num: {0}\nValidate data num: {1}'.format(len(train_list), len(validate_list)))
-    FLAGS.image_nums = len(train_list)
+
 
     def gen_train_batch():
         random.shuffle(train_list)
@@ -193,14 +193,14 @@ def tf_image_list_reader(FLAGS):
 ########################################################################################################################
 ########################################################################################################################
 def multi_process_data_read(FLAGS):
-    train_json_path = FLAGS.train_json_path,
-    validate_json_path = FLAGS.validate_json_path,
-    train_data_dir = FLAGS.train_data_dir,
-    validate_data_dir = FLAGS.validate_data_dir,
-    image_size = FLAGS.image_size,
-    batch_size = FLAGS.batch_size,
+    train_json_path = FLAGS.train_json_path
+    validate_json_path = FLAGS.validate_json_path
+    train_data_dir = FLAGS.train_data_dir
+    validate_data_dir = FLAGS.validate_data_dir
+    image_size = FLAGS.image_size
+    batch_size = FLAGS.batch_size
     trans_args = FLAGS.transform_args[0]
-    use_imbalance = FLAGS.ues_imbalance
+    use_imbalance = FLAGS.use_imbalance
 
     train_list = _json2list(train_data_dir, train_json_path)
     validate_list = _json2list(validate_data_dir, validate_json_path)
@@ -209,9 +209,9 @@ def multi_process_data_read(FLAGS):
         train_list, validate_list = _imbalance_dataset_split(train_list, validate_list)
 
     print('Train data num: {0}\nValidate data num: {1}'.format(len(train_list), len(validate_list)))
-    FLAGS.image_nums = len(train_list)
+
     train_batchs = len(train_list) // FLAGS.batch_size
-    has_smaller_batch = 0 if validate_list % batch_size == 0 else 1
+    has_smaller_batch = 0 if len(validate_list) % batch_size == 0 else 1
     valid_batchs = len(validate_list) // FLAGS.batch_size + has_smaller_batch
 
     def train_batch_func(q1):

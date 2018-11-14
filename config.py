@@ -4,7 +4,7 @@ import tensorflow as tf
 # I personally always like to make my paths absolute
 # to be independent from where the python binary is called
 dir = os.path.dirname(os.path.realpath(__file__))
-dataset_dir = '/home/linhai/PycharmProjects/crop_diseases_recognition_dataset'
+dataset_dir = '/home/linhai/Workspace/crop_diseases/data'
 random_transform_args = {
     'rotation_range': 10,
     'zoom_range': 0.05,
@@ -41,19 +41,22 @@ tf.flags.DEFINE_boolean('fullsearch', False,
 # Agent configuration
 tf.flags.DEFINE_string('model_name', 'sim_net', 'Unique name of the model')
 tf.flags.DEFINE_list('image_size', [256, 256], 'Image size to cv2 modle (w,h)')
-tf.flags.DEFINE_integer('batch_size', 8, 'Batch size')
-tf.flags.DEFINE_integer('num_class', 61, 'Class num')
+tf.flags.DEFINE_integer('batch_size', 32, 'Batch size')
+tf.flags.DEFINE_integer('num_classes', 61, 'Class num')
 tf.flags.DEFINE_integer('num_epochs', 200, 'Class num')
 tf.flags.DEFINE_list('transform_args', [random_transform_args], 'Random transform args')
 tf.flags.DEFINE_boolean('use_tf_pipline', True, 'Is or not use tensorflow pipline with queue and mulit-thread')
 tf.flags.DEFINE_integer('num_channels', 3, 'Images channels ')
 tf.flags.DEFINE_boolean('is_loadmodel', True, 'Is or not restore traned model last time.')
 
-# 暂时用不到
 # tf.flags.DEFINE_boolean('best', False, 'Force to use the best known configuration')
 # tf.flags.DEFINE_float('initial_mean', 0., 'Initial mean for NN')
 # tf.flags.DEFINE_float('initial_stddev', 1e-3, 'Initial standard deviation for NN')
-# tf.flags.DEFINE_float('lr', 1e-3, 'The learning rate of SGD/ADM')
+# Train parameter
+tf.flags.DEFINE_float('learning_rate', 1e-3, 'The learning rate of SGD/ADM')
+tf.flags.DEFINE_float('decay_rate','.9', 'learning rate decay rate')
+tf.flags.DEFINE_float('moving_average_decay', '.9', 'moving_average_decay')
+tf.flags.DEFINE_boolean('log_histograms', True, 'whether use histograms log')
 # tf.flags.DEFINE_float('nb_units', 20, 'Number of hidden units in Deep learning agents')
 
 # # Environment configuration
@@ -68,7 +71,7 @@ tf.flags.DEFINE_boolean('use_imbalance', False, 'Whether use imbalance to split 
 tf.flags.DEFINE_string('output_dir', dir + '/output/' + FLAGS.model_name + '/',  # + str(int(time.time())),
                        'Name of the directory to store/log the model (if it exists, the model will be loaded from it)')
 tf.flags.DEFINE_string('log_dir', dir + '/output/log_dir/', 'Log dir')
-tf.flags.DEFINE_string('log_interval', '100', 'log per-steps')
+tf.flags.DEFINE_float('log_interval', '100', 'log per-steps')
 
 # Another important point, you must provide an access to the random seed
 # to be able to fully reproduce an experiment
@@ -89,29 +92,6 @@ tf.flags.DEFINE_string('validate_data_dir',
 
 print('FLAGS define complated.')
 
-# print('absfds')
-# return FLAGS
-
-
-# from data.get_train_data import gen_train_data
-
-# import data.get_train_data as get
-# gen_train, val_train = get.gen_train_data(
-#     train_json_path=tf.app.flags.FLAGS.train_json_path,
-#     validate_json_path=tf.app.flags.FLAGS.validate_json_path,
-#     train_data_dir=tf.app.flags.FLAGS.train_data_dir,
-#     validate_data_dir=tf.app.flags.FLAGS.validate_data_dir,
-#     image_size=tf.app.flags.FLAGS.image_size,
-#     batch_size=tf.app.flags.FLAGS.batch_size,
-#     trans_args=random_transform_args
-#
-# )
-# g1 = gen_train()
-# g2 = val_train()
-# i = 0
-
-import matplotlib.pyplot as plt
-
-# x0,x1 = next(g1),next(g2)
-# for x in g2:
-#     i+=1
+"""
+添加优化器类型
+"""

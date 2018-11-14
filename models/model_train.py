@@ -7,13 +7,13 @@ from data.get_train_data import gen_train_data, multi_process_data_read
 from models.model_helper import ModelTrainTools as train_tools
 import models.model_helper as MH
 import numpy as np
-import os, sys, random
+import os, sys, random, time
 from tools.utils import get_logger
 
 
 # import data.get_train_data as get
 
-
+time.clock()
 # g1 = gen_train()
 # g2 = val_train()
 
@@ -22,6 +22,7 @@ def multi_train(Net, FLAGS):
     with tf.Graph().as_default():
 
         global_step = tf.Variable(0, trainable=False)
+        # global_step = tf.train.global_step()
 
         train_func, valid_func, [train_steps, valid_steps] = multi_process_data_read(FLAGS)
 
@@ -30,10 +31,7 @@ def multi_train(Net, FLAGS):
 
         logits = Net.inference(images)
         total_loss = train_tools.classify_loss(logits, labels)
-        train_op = train_tools.train(total_loss, global_step, 0.9,
-                                     FLAGS.image_nums,
-                                     FLAGS.batch_size,
-                                     FLAGS.epochs)
+        train_op = train_tools.train(total_loss, global_step, FLAGS.batch_size * train_steps, FLAGS)
         accuracy_op = train_tools.classify_accuracy(logits, labels)
         best_model0 = 0
 
@@ -49,7 +47,62 @@ def multi_train(Net, FLAGS):
         try:
             train_process.start()
             valid_process.start()
-            main(train_queue, valid_queue)
+            print('Begin Training')
+            for epoch in range(FLAGS.num_epochs):
+                for step in range(101):
+
+                    # t1 = time.clock()
+                    batch_x, batch_y = train_queue.get(True)
+                    if step and step % FLAGS.log_interval == 0:
+                        _, loss_value, acc_value, summary_str, global_step_value = sess.run(
+                            [train_op, total_loss, accuracy_op, summary_op, global_step],
+                            feed_dict={images: batch_x, labels: batch_y})
+
+                        logger.info('epoch:{4} [{0} / {1}] step {2}, loss {3}'.format(
+                            step // FLAGS.log_interval,
+                            train_steps // FLAGS.log_interval,
+                            step, loss_value, epoch))
+                        summary_writer.add_summary(summary_str, global_step=global_step_value )
+                    else:
+
+                        # print('read data', time.clock()-t1)
+                        _ = sess.run([train_op], feed_dict={images: batch_x, labels: batch_y})
+                        # print('>', end='')
+                        # print('sess run time', time.clock()-t0)
+                        # print('batch time', time.clock()-t1)
+                logger.info('Evaluating...')
+                accuracy_sum = []
+                for step in range(101):
+                    batch_x, batch_y = valid_queue.get(True)
+                    if step and step % FLAGS.log_interval == 0:
+                        loss_value, acc_value,summary_str = sess.run([total_loss, accuracy_op, summary_op],
+                                                            feed_dict={images: batch_x, labels: batch_y})
+
+                        logger.info('[{0} / {1}] step {2}, loss {3}'.format(
+                            step // FLAGS.log_interval,
+                            valid_steps // FLAGS.log_interval,
+                            step, loss_value))
+                        accuracy_sum.append(acc_value)
+                        # summary_writer.add_summary(summary_str, step)
+                    else:
+                        [acc_value] = sess.run([accuracy_op], feed_dict={images: batch_x, labels: batch_y})
+                        # print('#',end='')
+                        accuracy_sum.append(acc_value)
+
+                validation_acc = np.mean(accuracy_sum)
+                logger.info('#######################')
+                logger.info('epoch: {0} validation acc{1}'.format(epoch,validation_acc))
+                logger.info('#######################')
+                summary = tf.Summary()
+                summary.ParseFromString(summary_str)
+                summary.value.add(tag='val_acc', simple_value=validation_acc)
+                summary_writer.add_summary(summary, epoch)
+                if validation_acc > best_model0:
+                    best_model0 = validation_acc
+                    checkpoint_path = os.path.join(FLAGS.output_dir, FLAGS.model_name + '.ckpt')
+                    saver.save(sess, checkpoint_path, global_step=global_step)
+
+
             train_process.join()
             valid_process.terminate()
         except KeyboardInterrupt as e:
@@ -58,49 +111,7 @@ def multi_train(Net, FLAGS):
             train_process.terminate()
             valid_process.terminate()
 
-        for epoch in range(FLAGS.epochs):
-            for step in range(train_steps):
-                batch_x, batch_y = train_queue.get(True)
-                if step and step % FLAGS.log_interval == 0:
-                    _, loss_value, acc_value, summary_str = sess.run([train_op, total_loss, accuracy_op, summary_op],
-                                                                     feed_dict={images: batch_x, labels: batch_y})
 
-                    logger.info('[{0} / {1}] batch {2}, loss {3}'.format(
-                        step // FLAGS.log_interval,
-                        valid_steps // FLAGS.log_interval,
-                        step, loss_value))
-                    summary_writer.add_summary(summary_str, global_step=global_step)
-                else:
-                    _ = sess.run([train_op], feed_dict={images: batch_x, labels: batch_y})
-
-            best_model0, best_model1 = 0,1
-            accuracy_sum = []
-            for step in range(valid_steps):
-                batch_x, batch_y = valid_queue.get(True)
-                if step and step % FLAGS.log_interval == 0:
-                    _, loss_value, acc_value = sess.run([total_loss, accuracy_op],
-                                                                     feed_dict={images: batch_x, labels: batch_y})
-
-                    logger.info('[{0} / {1}] batch {2}, loss {3}'.format(
-                        step // FLAGS.log_interval,
-                        valid_steps // FLAGS.log_interval,
-                        step, loss_value))
-                    accuracy_sum.append(acc_value)
-                    # summary_writer.add_summary(summary_str, step)
-                else:
-                    acc_value = sess.run([accuracy_op], feed_dict={images: batch_x, labels: batch_y})
-                    accuracy_sum.append(acc_value)
-
-            predicted_acc = np.mean(accuracy_sum)
-            logger.info('#'*40+'\n'+'#'*40+'\t'+'ACC: ',predicted_acc,'#'*40+'\n'+'#'*40)
-            summary = tf.Summary()
-            summary.ParseFromString(summary_str)
-            summary.value.add(tag='val_acc', simple_value=predicted_acc)
-            summary_writer.add_summary(summary, epoch)
-            if predicted_acc > best_model0:
-                best_model0 = predicted_acc
-            checkpoint_path = os.path.join(FLAGS.output_dir, FLAGS.model_name + '.ckpt')
-            saver.save(sess, checkpoint_path, global_step=global_step)
 
 
 
